@@ -1,13 +1,17 @@
-# Compiler and complilation flag are included in Makefile.inc
+# Compiler and compilation flags are included in Makefile.inc.
 include Makefile.inc
 
-lib:
-	mkdir -p include;mkdir -p lib
-	cd src; mkdir -p obj; $(MAKE) all
+MODE ?= debug
+BUILD_FLAGS ?=
 
-all:
-	mkdir -p include; mkdir -p lib
-	cd src; mkdir -p obj; $(MAKE) all
+lib:
+	mkdir -p include/$(MODE) lib/$(MODE) src/obj/$(MODE)
+	$(MAKE) -C src all MODE=$(MODE) BUILD_FLAGS="$(BUILD_FLAGS)"
+
+all: lib
 
 clean:
-	cd src; $(MAKE) clean
+	$(MAKE) -C src clean
+	rm -rf include/debug* include/perf* lib/debug* lib/perf*
+
+.PHONY: lib all clean

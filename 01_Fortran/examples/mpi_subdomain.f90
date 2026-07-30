@@ -42,8 +42,14 @@ module mpi_subdomain
     !> @}
 
     !> @{ Partitioned grid numbers in the subdomain for transpose scheme 2
-    integer :: n2msub_Isub, h1psub, h1psub_Jsub, h1psub_Jsub_ista, h1psub_Jsub_iend
+    integer :: n2msub_Isub, h1psub, h1psub_Jsub, h1psub_Jsub_ista, h1psub_Jsub_iend, n2msub_Isub_jsta, n2msub_Isub_jend
     !> @}
+    
+    ! Dongyun
+    ! We need n1msub_Jsub also.
+    integer :: n1msub_Jsub, n1msub_Jsub_ista, n1msub_Jsub_iend
+    ! Dongyun
+
 
     !> @{ Derived datatype for transpose scheme 1 and transpose scheme 2. C: cubic (org.), I: x-aligned, J: y-aligned.
     integer, allocatable, dimension(:) :: ddtype_dble_C_in_C2I, ddtype_dble_I_in_C2I    ! Scheme 1 & 2
@@ -254,6 +260,12 @@ module mpi_subdomain
         integer :: bigsize(3), subsize(3), start(3), ierr 
         integer :: indexA, indexB
         integer, allocatable, dimension(:) :: n2msub_IsubAll,n1msubAll,h1psubAll,h1psub_JsubAll,n2msubAll
+        
+        ! Dongyun
+        ! We need n1msub_Jsub also
+        integer, allocatable, dimension(:) :: n1msub_JsubAll
+
+        ! Dongyun
 
         ! C means the partitioned domain in cubic shape as in original decomposition.
         ! I means the partitioned domain in x-aligned shaped for FFT in x-direction
@@ -273,9 +285,20 @@ module mpi_subdomain
 
         allocate(n2msub_IsubAll(0:comm_1d_x1%nprocs-1),n1msubAll(0:comm_1d_x1%nprocs-1),h1psubAll(0:comm_1d_x1%nprocs-1))
         allocate(h1psub_JsubAll(0:comm_1d_x2%nprocs-1),n2msubAll(0:comm_1d_x2%nprocs-1))
+
+        ! Dongyun
+        ! We need n1msub_Jsub also
+        allocate(n1msub_JsubAll(0:comm_1d_x2%nprocs-1))
+        ! Dongyun
         
-        call subdomain_para_range(1, n2msub, comm_1d_x1%nprocs, comm_1d_x1%myrank, indexA, indexB)
-        n2msub_Isub= indexB - indexA + 1     
+        ! call subdomain_para_range(1, n2msub, comm_1d_x1%nprocs, comm_1d_x1%myrank, indexA, indexB)
+        ! n2msub_Isub= indexB - indexA + 1     
+
+        ! Dongyun
+        ! We need n2msub_Isub_Ista, Iend also
+        call subdomain_para_range(1, n2msub, comm_1d_x1%nprocs, comm_1d_x1%myrank, n2msub_Isub_jsta, n2msub_Isub_jend)
+        n2msub_Isub= n2msub_Isub_jend - n2msub_Isub_jsta + 1     
+        ! Dongyun
         
         h1p = int(n1m/2)+1
         h2p = int(n2m/2)+1
@@ -285,6 +308,12 @@ module mpi_subdomain
 
         call subdomain_para_range(indexA, indexB, comm_1d_x2%nprocs, comm_1d_x2%myrank, h1psub_Jsub_ista, h1psub_Jsub_iend)
         h1psub_Jsub= h1psub_Jsub_iend - h1psub_Jsub_ista + 1
+
+        ! Dongyun
+        ! We need n1msub_Jsub also
+        call subdomain_para_range(1, n1msub, comm_1d_x2%nprocs, comm_1d_x2%myrank, n1msub_Jsub_ista, n1msub_Jsub_iend)
+        n1msub_Jsub = n1msub_Jsub_iend - n1msub_Jsub_ista + 1
+        ! Dongyun
 
         do i=0,comm_1d_x1%nprocs-1
             call subdomain_para_range(1, n2msub, comm_1d_x1%nprocs, i, indexA, indexB)
@@ -298,6 +327,12 @@ module mpi_subdomain
         do i=0,comm_1d_x2%nprocs-1             
             call subdomain_para_range(1, h1psub, comm_1d_x2%nprocs, i, indexA, indexB)
             h1psub_JsubAll(i) =indexB - indexA + 1 
+
+            ! Dongyun
+            ! We need n1msub_Jsub also
+            call subdomain_para_range(1, n1msub, comm_1d_x2%nprocs, i, indexA, indexB)
+            n1msub_JsubAll(i) =indexB - indexA + 1 
+            ! Dongyun
             call subdomain_para_range(1, n2-1, comm_1d_x2%nprocs, i, indexA, indexB)
             n2msubAll(i) =indexB - indexA + 1 
         enddo
@@ -390,6 +425,39 @@ module mpi_subdomain
                                          , MPI_DOUBLE_COMPLEX, ddtype_cplx_J_in_C2J(i), ierr )
             call MPI_TYPE_COMMIT(ddtype_cplx_J_in_C2J(i),ierr)
         enddo
+
+         ! Dongyun
+         ! DDT for I-J transpose (real type)
+        do i=0,comm_1d_x2%nprocs-1
+            bigsize(1) = n1msub ! h1psub
+            bigsize(2) = n2msub
+            bigsize(3) = n3msub
+            subsize(1) = n1msub_JsubAll(i)
+            subsize(2) = n2msub
+            subsize(3) = n3msub
+            start(1) = sum(n1msub_JsubAll(0:i)) - n1msub_JsubAll(i)
+            start(2) = 0
+            start(3) = 0
+            call MPI_TYPE_CREATE_SUBARRAY( 3, bigsize, subsize, start, MPI_ORDER_FORTRAN &
+                                         , MPI_DOUBLE_PRECISION, ddtype_dble_C_in_C2J(i), ierr )
+            call MPI_TYPE_COMMIT(ddtype_dble_C_in_C2J(i),ierr)
+                                                
+            bigsize(1) = n1msub_Jsub
+            bigsize(2) = n2m
+            bigsize(3) = n3msub
+            subsize(1) = n1msub_Jsub
+            subsize(2) = n2msubAll(i)
+            subsize(3) = n3msub
+            start(1) = 0
+            start(2) = sum(n2msubAll(0:i)) - n2msubAll(i)
+            start(3) = 0
+            call MPI_TYPE_CREATE_SUBARRAY( 3, bigsize, subsize, start, MPI_ORDER_FORTRAN &
+                                         , MPI_DOUBLE_PRECISION, ddtype_dble_J_in_C2J(i), ierr )
+            call MPI_TYPE_COMMIT(ddtype_dble_J_in_C2J(i),ierr)
+        enddo
+        deallocate(n1msub_JsubAll)
+         ! Dongyun
+
         deallocate(n2msub_IsubAll,n1msubAll,h1psubAll,h1psub_JsubAll,n2msubAll)
 
     end subroutine mpi_subdomain_DDT_transpose2

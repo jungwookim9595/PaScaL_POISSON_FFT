@@ -2,7 +2,7 @@ module cuda_pressure
     ! use debug
     use global
     use openacc
-    use nvtx
+    ! use nvtx
     use cufft
     use cudafor
     use mpi_subdomain
@@ -44,9 +44,9 @@ contains
         blocks  = dim3(block_in_x ,  block_in_y,  block_in_z)
         threads = dim3(thread_in_x, thread_in_y, thread_in_z)
 
-        call nvtxStartRange("Poisson-RHS")
+        ! call nvtxStartRange("Poisson-RHS")
             call cuda_pressure_RHS_kernel<<<blocks, threads, 5*share_size>>>(prhs_d, n1msub, n2msub, n3msub)    
-        call nvtxEndRange
+        ! call nvtxEndRange
 
     end subroutine cuda_pressure_RHS
 
@@ -63,30 +63,58 @@ contains
         
     end subroutine cuda_pressure_PRHS_memory
 
-    attributes(global) subroutine cuda_pressure_RHS_kernel(prhs_d, n1, n2, n3)
-        use cuda_subdomain, only : x1_d, x2_d, x3_d, dx3_d
+!     attributes(global) subroutine cuda_pressure_RHS_kernel(prhs_d, n1, n2, n3)
+!         use cuda_subdomain, only : x1_d, x2_d, x3_d, dx3_d
         
+!         implicit none
+
+!         real(rp), device, dimension( 1:, 1:, 1:), intent(out)  :: prhs_d
+
+!         integer,  value, intent(in) :: n1, n2, n3
+
+!         integer :: i, j, k
+!         integer :: im ,ip ,jm ,jp ,km ,kp
+!         integer :: ium,iup,jvm,jvp,kwm,kwp
+
+!         integer :: tim, ti, tip, tjm, tj, tjp, tkm, tk, tkp
+
+
+!         i = (blockidx%x-1) * blockdim%x + threadidx%x; im=i-1; ip=i+1;
+!         j = (blockidx%y-1) * blockdim%y + threadidx%y; jm=j-1; jp=j+1;
+!         k = (blockidx%z-1) * blockdim%z + threadidx%z; km=k-1; kp=k+1;
+
+!         if ((i <= n1) .and. (j <= n2) .and. (k <= n3)) then         
+!             PRHS_d(i,j,k) = - cos(x1_d(i)*PI)*cos(x2_d(j)*PI)*cos(x3_d(k)*PI)*3.0*PI*PI
+!         endif
+
+!     end subroutine cuda_pressure_RHS_kernel
+
+    attributes(global) subroutine cuda_pressure_RHS_kernel(prhs_d, n1, n2, n3)
+        use cuda_subdomain, only : x1_d, x2_d, x3_d
         implicit none
 
-        real(rp), device, dimension( 1:, 1:, 1:), intent(out)  :: prhs_d
-
-        integer,  value, intent(in) :: n1, n2, n3
+        real(rp), device, dimension(1:,1:,1:), intent(out) :: prhs_d
+        integer, value, intent(in) :: n1, n2, n3
 
         integer :: i, j, k
-        integer :: im ,ip ,jm ,jp ,km ,kp
-        integer :: ium,iup,jvm,jvp,kwm,kwp
+        real(rp) :: xc, yc, zc
 
-        integer :: tim, ti, tip, tjm, tj, tjp, tkm, tk, tkp
+        i = (blockidx%x-1) * blockdim%x + threadidx%x
+        j = (blockidx%y-1) * blockdim%y + threadidx%y
+        k = (blockidx%z-1) * blockdim%z + threadidx%z
 
+        if ((i <= n1) .and. (j <= n2) .and. (k <= n3)) then
 
-        i = (blockidx%x-1) * blockdim%x + threadidx%x; im=i-1; ip=i+1;
-        j = (blockidx%y-1) * blockdim%y + threadidx%y; jm=j-1; jp=j+1;
-        k = (blockidx%z-1) * blockdim%z + threadidx%z; km=k-1; kp=k+1;
+            ! Face coordinates -> cell-center coordinates
+            xc = real(0.5,rp) * (x1_d(i) + x1_d(i+1))
+            yc = real(0.5,rp) * (x2_d(j) + x2_d(j+1))
+            zc = real(0.5,rp) * (x3_d(k) + x3_d(k+1))
 
-        if ((i <= n1) .and. (j <= n2) .and. (k <= n3)) then         
-            PRHS_d(i,j,k) = - cos(x1_d(i)*PI)*cos(x2_d(j)*PI)*cos(x3_d(k)*PI)*3.0*PI*PI
+            prhs_d(i,j,k) = -real(3.0,rp)*PI*PI  &
+                            * cos(PI*xc)          &
+                            * cos(PI*yc)          &
+                            * cos(PI*zc)
         endif
 
     end subroutine cuda_pressure_RHS_kernel
-
 end module cuda_pressure
