@@ -1,13 +1,36 @@
-ifdef USE_GPU
+###############################################################################
+# Compile setting with intel compiler and intel MPI.
+# Modify flags according to the system and environment
+###############################################################################
 
-FC    = mpif90
-FLAG  = -O3 -Mpreprocess -fPIC -fortranlibs -Kieee -Mlarge_arrays
-FLAG += -Mcuda -Minfo=accel
+# FC = mpiifort
+
+# FLAG  = -O3 -fPIC -cpp
+# FLAG += -g
+# FLAG += -fcheck=all -warn-all 
+# FLAG += -fp-model=precise 
+# FLAG += -check bounds
+# FLAG += -xMIC-AVX512
+
+###############################################################################
+# Compile setting with nvfortran and non-intel MPI.
+# Modify flags according to the system and environment
+###############################################################################
+
+FC = mpifort
+
+CPU_ARCH_FLAGS ?= -tp=x86-64-v3
+GPU_ARCH_FLAGS ?= -gpu=ccall
+
+FLAG  = -O3 -fPIC -cpp 
+FLAG += $(CPU_ARCH_FLAGS)
+
+###############################################################################
+# To use CUDA
+# PaScaL_TDMA is compiled for CUDA also.
+###############################################################################
+
 USE_CUDA = yes
+FLAG += -mp:multicore -cuda $(GPU_ARCH_FLAGS) -Minfo=accel 
+#FLAG += -DUSE_NVTX
 
-else
-
-FC   = mpiifort
-FLAG = -O3 -fPIC -fp-model=precise -xCORE-AVX2 -assume byterecl -cpp
-
-endif

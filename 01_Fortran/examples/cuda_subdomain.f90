@@ -3,7 +3,7 @@ module cuda_subdomain
     use global
     use cudafor
     use openacc
-    use nvtx
+    ! use nvtx
     use mpi_subdomain, only : n1sub, n2sub, n3sub, n1msub, n2msub, n3msub
 
     implicit none
@@ -57,6 +57,9 @@ module cuda_subdomain
         use mpi_topology, only : nprocs, myrank
         implicit none
         integer :: istat, nDevices, local_rank, ierr
+        integer :: env_status, env_length, read_status
+        character(len=32) :: local_rank_text
+        character(len=16) :: rank_source
     
         ! Check the total number of available CUDA devices
         istat = cudaGetDeviceCount(nDevices)
@@ -68,8 +71,26 @@ module cuda_subdomain
             return
         endif
     
-        ! Select and initialize the GPU based on the MPI rank
-        local_rank = mod(myrank, nDevices)
+        ! Use the node-local OpenMPI rank, not world-rank modulo GPU count.
+        ! The latter maps two processes to the same GPU when the rank order is
+        ! intentionally permuted for topology-aware communication tests.
+        local_rank = -1
+        local_rank_text = ''
+        call get_environment_variable( &
+            'OMPI_COMM_WORLD_LOCAL_RANK', local_rank_text, &
+            length=env_length, status=env_status)
+        if (env_status == 0 .and. env_length > 0) then
+            read(local_rank_text(1:env_length), *, iostat=read_status) &
+                local_rank
+            if (read_status /= 0) local_rank = -1
+        endif
+        if (local_rank >= 0 .and. local_rank < nDevices) then
+            rank_source = 'OMPI local rank'
+        else
+            local_rank = mod(myrank, nDevices)
+            rank_source = 'world-rank mod'
+        endif
+
         istat = cudaSetDevice(local_rank)
         if (istat /= cudaSuccess) then
             write(*,*) "Error: Rank", myrank, "failed to set GPU device", local_rank
@@ -80,7 +101,9 @@ module cuda_subdomain
         ! Initialize the GPU with OpenACC
         call acc_set_device_num(local_rank, acc_device_nvidia)
         ! Report the assignment of CPUs to GPUs
-        write(*,*) "Rank", myrank, "assigned to GPU", local_rank
+        write(*,'(A,I0,A,I0,A,A)') &
+            ' Rank ', myrank, ' assigned to GPU ', local_rank, &
+            ' via ', trim(rank_source)
 
         call MPI_Barrier(MPI_COMM_WORLD, ierr);
 

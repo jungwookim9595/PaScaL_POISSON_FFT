@@ -1,0 +1,35 @@
+MPMC 실행 순서
+==============
+
+1) ZIP을 푼 프로젝트 디렉터리로 이동
+
+   cd ~/PaScaL_POISSON_FFT_GPU_static_tdma_MPMC
+
+2) 실행 권한 부여
+
+   chmod +x ./*.sh ./*.slurm
+
+3) 정적 검사 + debug/performance 동시 빌드 + sbatch 제출
+
+   ./build_and_submit_mpmc_static_tdma.sh
+
+중요:
+- 소스 경로는 스크립트 위치/SLURM_SUBMIT_DIR에서 자동 탐색한다.
+- /var/spool/slurm/... 경로를 프로젝트 경로로 사용하지 않는다.
+- 한 allocation에서 NP1(111), NP2(112), NP4(122)를 순서대로 실행한다.
+- dynamic TDMA와 static-operator TDMA를 같은 direct-C2I 코드로 A/B한다.
+- NP4는 세 rank placement를 모두 시험한다.
+- solution dump는 만들지 않고, 마지막 solution RMS만 timer 밖에서 확인한다.
+
+결과:
+
+   results_static_tdma/job_<JOB_ID>/summary.txt
+   results_static_tdma/job_<JOB_ID>/static_tdma_ab_comparison.csv
+   results_static_tdma/job_<JOB_ID>/tdma_phase_ab_comparison.csv
+
+결과 보내기:
+
+   zip -r results_static_tdma_<JOB_ID>.zip \
+     results_static_tdma/job_<JOB_ID> \
+     PaScaL_STATIC_TDMA_<JOB_ID>.output \
+     PaScaL_STATIC_TDMA_<JOB_ID>.err

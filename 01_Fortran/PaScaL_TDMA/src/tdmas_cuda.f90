@@ -14,7 +14,7 @@
 !> @par         Copyright
 !>              Copyright (c) 2019-2023 Mingyu Yang, Ki-Ha Kim and Jung-Il choi, Yonsei University and 
 !>              Ji-Hoon Kang, Korea Institute of Science and Technology Information, All rights reserved.
-!> @par         License     
+!> @par License     
 !>              This project is release under the terms of the MIT License (see LICENSE in )
 !=======================================================================================================================
 
@@ -32,11 +32,11 @@ contains
     !> @param   d           Coefficient array in the right-hand side terms
     !> @param   nz_row      Row size of tridiagonal matrix in z-direction that is the solving direction
     !>
-    attributes(global) subroutine tdma_many_cuda(a, b, c, d, nz_row)
+    attributes(global) subroutine tdma_many_cuda(a, b, c, d, nx_sys, ny_sys, nz_row)
 
         implicit none
 
-        integer, value, intent(in)      :: nz_row
+        integer, value, intent(in)      :: nx_sys, ny_sys, nz_row
         double precision, device, intent(in)    :: a(:, :, :), b(:, :, :)
         double precision, device, intent(inout) :: c(:, :, :), d(:, :, :)
         
@@ -57,8 +57,12 @@ contains
         tj = threadidx%x
         tk = threadidx%y
 
+        ! The final CUDA block can be partial after ceiling division.
+        ! This kernel contains no block-wide synchronization, so inactive threads can return safely.
+        if (j > nx_sys .or. k > ny_sys) return
+
         ! Using shared memory
-		! First and second indices are for thread IDs
+        ! First and second indices are for thread IDs
         b1(tj, tk) = b(j, k, 1)
         c1(tj, tk) = c(j, k, 1)
         d1(tj, tk) = d(j, k, 1)
@@ -102,6 +106,83 @@ contains
     end subroutine tdma_many_cuda
 
     !>
+    !> @brief   Solve two right-hand sides that share one tridiagonal operator.
+    !> @details The Thomas factors (the updated upper diagonal) are formed once
+    !>          and applied to both RHS arrays in the same kernel.
+    !>
+    attributes(global) subroutine tdma_many_2rhs_cuda(a, b, c, d1, d2, nx_sys, ny_sys, nz_row)
+
+        implicit none
+
+        integer, value, intent(in)      :: nx_sys, ny_sys, nz_row
+        double precision, device, intent(in)    :: a(:, :, :), b(:, :, :)
+        double precision, device, intent(inout) :: c(:, :, :), d1(:, :, :), d2(:, :, :)
+
+        integer :: i, j, k
+        integer :: tj, tk
+        double precision :: r
+
+        double precision, shared :: a1(blockdim%x + 1, blockdim%y)
+        double precision, shared :: b1(blockdim%x + 1, blockdim%y)
+        double precision, shared :: c0(blockdim%x + 1, blockdim%y), c1(blockdim%x + 1, blockdim%y)
+        double precision, shared :: d10(blockdim%x + 1, blockdim%y), d11(blockdim%x + 1, blockdim%y)
+        double precision, shared :: d20(blockdim%x + 1, blockdim%y), d21(blockdim%x + 1, blockdim%y)
+
+        j = (blockidx%x - 1) * blockdim%x + threadidx%x
+        k = (blockidx%y - 1) * blockdim%y + threadidx%y
+        tj = threadidx%x
+        tk = threadidx%y
+
+        if (j > nx_sys .or. k > ny_sys) return
+
+        b1(tj, tk)  = b(j, k, 1)
+        c1(tj, tk)  = c(j, k, 1)
+        d11(tj, tk) = d1(j, k, 1)
+        d21(tj, tk) = d2(j, k, 1)
+
+        r = 1.0d0 / b1(tj, tk)
+        c1(tj, tk)  = r * c1(tj, tk)
+        d11(tj, tk) = r * d11(tj, tk)
+        d21(tj, tk) = r * d21(tj, tk)
+
+        c(j, k, 1)  = c1(tj, tk)
+        d1(j, k, 1) = d11(tj, tk)
+        d2(j, k, 1) = d21(tj, tk)
+
+        do i = 2, nz_row
+            c0(tj, tk)  = c1(tj, tk)
+            d10(tj, tk) = d11(tj, tk)
+            d20(tj, tk) = d21(tj, tk)
+
+            a1(tj, tk)  = a(j, k, i)
+            b1(tj, tk)  = b(j, k, i)
+            c1(tj, tk)  = c(j, k, i)
+            d11(tj, tk) = d1(j, k, i)
+            d21(tj, tk) = d2(j, k, i)
+
+            r = 1.0d0 / (b1(tj, tk) - a1(tj, tk) * c0(tj, tk))
+            c1(tj, tk)  = r * c1(tj, tk)
+            d11(tj, tk) = r * (d11(tj, tk) - a1(tj, tk) * d10(tj, tk))
+            d21(tj, tk) = r * (d21(tj, tk) - a1(tj, tk) * d20(tj, tk))
+
+            c(j, k, i)  = c1(tj, tk)
+            d1(j, k, i) = d11(tj, tk)
+            d2(j, k, i) = d21(tj, tk)
+        enddo
+
+        do i = nz_row - 1, 1, -1
+            c0(tj, tk)  = c(j, k, i)
+            d10(tj, tk) = d1(j, k, i) - c0(tj, tk) * d11(tj, tk)
+            d20(tj, tk) = d2(j, k, i) - c0(tj, tk) * d21(tj, tk)
+            d11(tj, tk) = d10(tj, tk)
+            d21(tj, tk) = d20(tj, tk)
+            d1(j, k, i) = d10(tj, tk)
+            d2(j, k, i) = d20(tj, tk)
+        enddo
+
+    end subroutine tdma_many_2rhs_cuda
+
+    !>
     !> @brief   Solve many tridiagonal systems of equations using the Thomas algorithm.
     !>          First & second indices indicate the number of independent many tridiagonal systems for parallelization.
     !>          Third index indicates the row number in the tridiagonal system.
@@ -111,11 +192,11 @@ contains
     !> @param   d           Coefficient array in the right-hand side terms
     !> @param   nz_row      Row size of tridiagonal matrix in z-direction that is the solving direction
     !>
-    attributes(global) subroutine tdma_cycl_many_cuda(a, b, c, d, e, nz_row)
+    attributes(global) subroutine tdma_cycl_many_cuda(a, b, c, d, e, nx_sys, ny_sys, nz_row)
 
         implicit none
 
-        integer, value, intent(in)      :: nz_row
+        integer, value, intent(in)      :: nx_sys, ny_sys, nz_row
         double precision, device, intent(in)    :: a(:, :, :), b(:, :, :)
         double precision, device, intent(inout) :: c(:, :, :), d(:, :, :), e(:, :, :)
 
@@ -137,12 +218,16 @@ contains
         tj = threadidx%x
         tk = threadidx%y
 
+        ! The final CUDA block can be partial after ceiling division.
+        ! This kernel contains no block-wide synchronization, so inactive threads can return safely.
+        if (j > nx_sys .or. k > ny_sys) return
+
         do i = 1, nz_row
             e(j, k, i)  = 0.0d0
         enddo
 
         ! Using shared memory
-		! First and second indices are for thread IDs
+        ! First and second indices are for thread IDs
         e(j, k, 2)  = -a(j, k, 2)
         e(j, k, nz_row) = -c(j, k, nz_row)
 

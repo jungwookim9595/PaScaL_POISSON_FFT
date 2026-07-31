@@ -1,0 +1,7 @@
+Source: NVIDIA/cuDecomp
+Commit: 2d8e1cbba40c8eb1599e805c31f52cef08d57fab
+Describe: v0.6.1-12-g2d8e1cb
+Commit date: 2026-03-19
+License: Apache-2.0 (see vendor/cuDecomp/LICENSE)
+Origin in this offline package: the cuDecomp submodule bundled with the
+user-supplied CaNS source archive.
