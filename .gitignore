@@ -47,3 +47,25 @@ obj/
 # Solution dumps written by the examples (dir_instantfield / dir_cont_fileout)
 run/data/
 */run/data/
+
+# Python byte cache
+__pycache__/
+
+# =============================================================================
+# Site-specific runs: job scripts written for one cluster, their stdout, and the
+# benchmark results they produce.  All reproducible from the tracked sources, and
+# none of it belongs in a library release.
+# =============================================================================
+
+# Scheduler stdout
+01_Fortran/*.out
+02_Python/*.out
+
+# Benchmark drivers and everything they write
+02_Python/scalability_test.sh
+02_Python/run_example.slurm
+02_Python/00_base/
+01_Fortran/run_reference_*.slurm
+
+# Bug reproduction package, handed over out of band
+01_Fortran/docs/bug_np1np2/
