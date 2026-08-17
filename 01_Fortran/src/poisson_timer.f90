@@ -60,6 +60,7 @@ module poisson_timer
     public :: poisson_timer_solve_begin, poisson_timer_solve_end
     public :: poisson_timer_comm_enter,  poisson_timer_comm_exit
     public :: poisson_timer_report
+    public :: poisson_timer_values
 
 contains
 
@@ -164,6 +165,27 @@ contains
         ierr = cudaDeviceSynchronize()
         call timer_stamp(POISSON_T_COMM, STAMP_PHASE)
     end subroutine poisson_timer_comm_exit
+
+    !>
+    !> @brief   This rank's raw accumulators, for a caller that does its own reduction.
+    !> @details Totals over all solves since the last reset, not per-solve averages.  Used by the
+    !>          Python driver, which reduces with mpi4py and writes its own benchmark record.
+    !>          All zero when the instrumentation is off.
+    !>
+    subroutine poisson_timer_values(comp, comm, total, nsolve)
+        implicit none
+
+        double precision, intent(out) :: comp, comm, total
+        integer, intent(out) :: nsolve
+
+        comp = 0.0d0; comm = 0.0d0; total = 0.0d0; nsolve = 0
+        if (.not. poisson_timer_enabled()) return
+
+        comp   = t_array(POISSON_T_COMP)
+        comm   = t_array(POISSON_T_COMM)
+        total  = t_array(POISSON_T_TOTAL)
+        nsolve = solve_count
+    end subroutine poisson_timer_values
 
     !>
     !> @brief   Report per-solve averages, reduced over ranks.
